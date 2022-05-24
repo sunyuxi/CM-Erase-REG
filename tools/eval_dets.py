@@ -50,20 +50,21 @@ def evaluate(params):
   loader = DetsLoader(data_h5=data_h5, data_json=data_json, dets_json=dets_json)
 
   # loader's feats
-  feats_dir = '%s_%s_%s' % (model_opt['net_name'], model_opt['imdb_name'], model_opt['tag'])
   args.imdb_name = model_opt['imdb_name']
   args.net_name = model_opt['net_name']
   args.tag = model_opt['tag']
-  args.iters = model_opt['iters']
-  loader.prepare_mrcn(head_feats_dir=osp.join('cache/feats/', model_opt['dataset_splitBy'], 'mrcn', feats_dir), 
-                      args=args) 
-  det_feats = osp.join('cache/feats', model_opt['dataset_splitBy'], 'mrcn', 
+  # prepare feats
+  suffix = 'hbb_det_%s_%s_%s.hdf5' % (args.net_name, args.imdb_name, args.tag)
+  head_feats_dir='data/rsvg/hbb_obb_features_det'
+  wholeimg_suffix = 'hbb_img_%s_%s_%s.hdf5' % (args.net_name, args.imdb_name, args.tag)
+  wholeimg_feats_dir='data/rsvg/hbb_obb_features_wholeimg'
+  loader.prepare_mrcn(head_feats_dir, suffix, args, wholeimg_feats_dir, wholeimg_suffix)
+  det_feats = osp.join('cache/feats', model_opt['dataset_splitBy'],
                        '%s_%s_%s_det_feats.h5' % (model_opt['net_name'], model_opt['imdb_name'], model_opt['tag']))
   loader.loadFeats({'det': det_feats})
 
   # check model_info and params
   assert model_opt['dataset'] == params['dataset']
-  assert model_opt['splitBy'] == params['splitBy']
 
   # evaluate on the split, 
   # predictions = [{sent_id, sent, gd_ann_id, pred_ann_id, pred_score, sub_attn, loc_attn, weights}]
@@ -71,7 +72,7 @@ def evaluate(params):
   model_opt['num_sents'] = params['num_sents']
   model_opt['verbose'] = params['verbose']
   crit = None
-  acc, predictions = eval_utils.eval_split(loader, model, crit, split, model_opt)
+  acc, predictions = eval_utils.eval_split(loader, model, crit, split, model_opt, params['iou_threshold'])
   print('Comprehension on %s\'s %s (%s sents) is %.2f%%' % \
         (params['dataset_splitBy'], params['split'], len(predictions), acc*100.)) 
 
@@ -85,8 +86,8 @@ def evaluate(params):
 
   # write to results.txt
   f = open('experiments/det_results.txt', 'a')
-  f.write('[%s][%s], id[%s]\'s acc is %.2f%%\n' % \
-          (params['dataset_splitBy'], params['split'], params['id'], acc*100.0))
+  f.write('[%s][%s], iou=%.2f id[%s]\'s acc is %.2f%%\n' % \
+          (params['dataset_splitBy'], params['split'], params['iou_threshold'], params['id'], acc*100.0))
 
 
 if __name__ == '__main__':
@@ -95,7 +96,12 @@ if __name__ == '__main__':
   params = vars(args)
 
   # make other options
-  params['dataset_splitBy'] = params['dataset'] + '_' + params['splitBy']
+  params['dataset_splitBy'] = params['dataset']
+  # eval test
+  evaluate(params)
+
+  # eval val
+  params['split'] = 'val'
   evaluate(params)
 
 

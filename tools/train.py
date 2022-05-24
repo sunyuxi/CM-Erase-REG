@@ -4,6 +4,8 @@ from __future__ import print_function
 
 import os
 import os.path as osp
+from re import A
+from sre_constants import ASSERT
 import sys
 import numpy as np
 import json
@@ -92,8 +94,7 @@ def lossFun(loader, optimizer, model, mm_crit, att_crit, opt, iter, erase_model 
         feats_new[key] = data['Feats'][key].clone()
         feats_new[key].detach_()
         feats_new[key].volatile = True
-      labels_tmp = data['labels']
-      labels_tmp.detach_()
+      labels_tmp = data['labels'].clone().detach()
       labels_tmp.volatile = True
       labels_tmp_lengths = (labels_tmp != 0).sum(1)
       labels_tmp_lengths_list = labels_tmp_lengths.data.cpu().numpy().tolist()
@@ -139,8 +140,8 @@ def lossFun(loader, optimizer, model, mm_crit, att_crit, opt, iter, erase_model 
     del loss2
     return lossdata, loss1data, loss2data, T, data['bounds']['wrapped']
   else:
-    lossdata = loss.data[0]
-    loss1data = loss1.data[0]
+    lossdata = loss
+    loss1data = loss1
     del loss
     del loss1
     return lossdata, loss1data, 0, T, data['bounds']['wrapped']
@@ -151,13 +152,13 @@ def main(args):
   tb_logger.configure('tb_logs/'+opt['id'], flush_secs=2)
 
   # initialize
-  opt['dataset_splitBy'] = opt['dataset'] + '_' + opt['splitBy']
-  if opt['dataset'] == 'refcocog':
-    opt['unk_token'] = 3346
-  elif opt['dataset'] == 'refcoco':
-    opt['unk_token'] = 1996 
-  elif opt['dataset'] == 'refcoco+':
-    opt['unk_token'] = 2629
+  opt['dataset_splitBy'] = opt['dataset']
+  if opt['dataset'] == 'rsvg':
+    opt['unk_token'] = 2663
+  else:
+    print('others are implmentented, except rsvg!')
+    assert False
+
   checkpoint_dir = osp.join(opt['checkpoint_path'], opt['dataset_splitBy'])
   if not osp.isdir(checkpoint_dir): os.makedirs(checkpoint_dir)
 
@@ -170,10 +171,12 @@ def main(args):
   data_h5 = osp.join('cache/prepro', opt['dataset_splitBy'], 'data.h5')
   loader = GtMRCNLoader(data_h5=data_h5, data_json=data_json)
   # prepare feats
-  feats_dir = '%s_%s_%s' % (args.net_name, args.imdb_name, args.tag)
-  head_feats_dir=osp.join('cache/feats/', opt['dataset_splitBy'], 'mrcn', feats_dir)
-  loader.prepare_mrcn(head_feats_dir, args)
-  ann_feats = osp.join('cache/feats', opt['dataset_splitBy'], 'mrcn', 
+  suffix = 'hbb_gt_%s_%s_%s.hdf5' % (args.net_name, args.imdb_name, args.tag)
+  head_feats_dir='data/rsvg/hbb_obb_features_gt'
+  wholeimg_suffix = 'hbb_img_%s_%s_%s.hdf5' % (args.net_name, args.imdb_name, args.tag)
+  wholeimg_feats_dir='data/rsvg/hbb_obb_features_wholeimg'
+  loader.prepare_mrcn(head_feats_dir, suffix, args, wholeimg_feats_dir, wholeimg_suffix)
+  ann_feats = osp.join('cache/feats', opt['dataset_splitBy'],
                        '%s_%s_%s_ann_feats.h5' % (opt['net_name'], opt['imdb_name'], opt['tag']))
   loader.loadFeats({'ann': ann_feats})
 
@@ -222,13 +225,16 @@ def main(args):
   else:
     mm_crit = MaxMarginCriterion(opt['visual_rank_weight'], opt['lang_rank_weight'], opt['margin'])
 
-  att_crit = nn.BCEWithLogitsLoss(loader.get_attribute_weights())
+  att_crit = None 
+  #sunyuxi
+  #att_crit = nn.BCEWithLogitsLoss(loader.get_attribute_weights())
 
   # move to GPU
   if opt['gpuid'] >= 0:
     model.cuda()
     mm_crit.cuda()
-    att_crit.cuda()
+    #sunyuxi
+    #att_crit.cuda()
 
   # set up optimizer
   optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 
@@ -288,9 +294,9 @@ def main(args):
       val_accuracies += [(iter, acc)]
       print('val loss: %.2f' % val_loss)
       print('val acc : %.2f%%\n' % (acc*100.0))
-      print('val precision : %.2f%%' % (overall['precision']*100.0))
-      print('val recall    : %.2f%%' % (overall['recall']*100.0))
-      print('val f1        : %.2f%%' % (overall['f1']*100.0))
+      print('(attr) val precision : %.2f%%' % (overall['precision']*100.0))
+      print('(attr) val recall    : %.2f%%' % (overall['recall']*100.0))
+      print('(attr) val f1        : %.2f%%' % (overall['f1']*100.0))
       # write tensorboard logger
       tb_logger.log_value('val_loss', val_loss, step=iter)
       tb_logger.log_value('val_acc', acc, step=iter)
@@ -315,7 +321,7 @@ def main(args):
       infos['iter'] = iter
       infos['epoch'] = epoch
       infos['iterators'] = loader.iterators
-      infos['loss_history'] = loss_history
+      #infos['loss_history'] = loss_history
       infos['val_accuracies'] = val_accuracies
       infos['val_loss_history'] = val_loss_history
       infos['best_val_score'] = best_val_score
@@ -325,7 +331,7 @@ def main(args):
       infos['val_result_history'] = val_result_history
       infos['word_to_ix'] = loader.word_to_ix
       infos['att_to_ix'] = loader.att_to_ix
-      with open(osp.join(checkpoint_dir, opt['id']+'.json'), 'wb') as io:
+      with open(osp.join(checkpoint_dir, opt['id']+'.json'), 'w') as io:
         json.dump(infos, io)
 
 

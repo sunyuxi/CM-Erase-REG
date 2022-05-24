@@ -71,7 +71,8 @@ class JointMatching(nn.Module):
     self.unk_token = opt['unk_token']
 
     # language rnn encoder
-    word_emb_path = os.path.join(os.getcwd(),'glove_emb',opt['dataset']+'.npy')
+    print(os.getcwd())
+    word_emb_path = os.path.join(os.getcwd(),'data/rsvg/glove', opt['dataset']+'_glove.840B.300d.npy')
     dict_emb = np.load(word_emb_path)
     
     self.rnn_encoder = RNNEncoderImgGlove(dict_emb, vocab_size=opt['vocab_size'],

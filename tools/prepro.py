@@ -29,9 +29,6 @@ import operator
 # non-standard dependencies:
 import h5py
 import numpy as np
-from scipy.misc import imread, imresize
-
-import pdb
 
 forbidden_att = ['none', 'other', 'sorry', 'pic', 'extreme', 'rightest', 'tie', 'leftest', 'hard', 'only', 
 'darkest', 'foremost', 'topmost', 'leftish','utmost', 'lemon', 'good', 'hot', 'more', 'least', 'less', 
@@ -70,7 +67,7 @@ def build_vocab(refer, params):
   vocab = good_words
 
   # add category words
-  category_names = refer.Cats.values() + ['__background__']
+  category_names = list(refer.Cats.values()) + ['__background__']
   for cat_name in category_names:
     for wd in cat_name.split():
       if wd not in word2count or word2count[wd] <= count_thr:
@@ -189,12 +186,12 @@ def build_att_vocab(refer, params, att_types=['r1', 'r2', 'r7']):
   Load sents = [{tokens, atts, sent_id, parse, raw, sent left}] 
   from pyutils/refer-parser2/cache/parsed_atts/dataset_splitBy/sents.json
   """
-  sents = json.load(open(osp.join('pyutils/refer-parser2/cache/parsed_atts', 
-                                  params['dataset']+'_'+params['splitBy'], 'sents.json')))
+  sents = json.load(open(osp.join('refer-parser2/cache/parsed_atts', 
+                                  params['dataset'], 'sents.json')))
   sentToRef = refer.sentToRef
   ref_to_att_wds = {}
   forbidden = forbidden_noun + forbidden_att + forbidden_verb \
-              + refer.Cats.values() # we also forbid category name here
+              + list(refer.Cats.values()) # we also forbid category name here
   for sent in sents:
     sent_id = sent['sent_id']
     atts = sent['atts']
@@ -228,29 +225,26 @@ def build_att_vocab(refer, params, att_types=['r1', 'r2', 'r7']):
 def main(params):
 
   # dataset_splitBy
-  data_root, dataset, splitBy = params['data_root'], params['dataset'], params['splitBy']
+  data_root, dataset = params['data_root'], params['dataset'] #, splitBy, params['splitBy']
 
   # max_length
   if params['max_length'] == None:
-    if params['dataset'] in ['refcoco', 'refclef', 'refcoco+']:
-      params['max_length'] = 10
-      params['topK'] = 50
-    elif params['dataset'] in ['refcocog']:
-      params['max_length'] = 20
+    if params['dataset'] in ['rsvg']:
+      params['max_length'] = 80
       params['topK'] = 50
     else:
       raise NotImplementedError
 
   # mkdir and write json file
-  if not osp.isdir(osp.join('cache/prepro', dataset+'_'+splitBy)):
-    os.makedirs(osp.join('cache/prepro', dataset+'_'+splitBy))
+  if not osp.isdir(osp.join('cache/prepro', dataset)):
+    os.makedirs(osp.join('cache/prepro', dataset))
 
   # load refer
-  sys.path.insert(0, 'pyutils/refer')
   from refer import REFER
-  refer = REFER(data_root, dataset, splitBy)
+  refer = REFER(data_root, dataset)
 
   # create vocab
+  # sentToFinal:sent_id:[w1,w2,...,wn]
   vocab, sentToFinal = build_vocab(refer, params)
   itow = {i: w for i, w in enumerate(vocab)} 
   wtoi = {w: i for i, w in enumerate(vocab)} 
@@ -275,11 +269,11 @@ def main(params):
              'att_to_cnt': att2cnt,
              'cat_to_ix': {cat_name: cat_id for cat_id, cat_name in refer.Cats.items()},
              'label_length': params['max_length'],}, 
-             open(osp.join('cache/prepro', dataset+'_'+splitBy, params['output_json']), 'w'))
+             open(osp.join('cache/prepro', dataset, params['output_json']), 'w'))
   print('%s written.' % osp.join('cache/prepro', params['output_json']))
 
   # write h5 file which contains /sentences
-  f = h5py.File(osp.join('cache/prepro', dataset+'_'+splitBy, params['output_h5']), 'w')
+  f = h5py.File(osp.join('cache/prepro', dataset, params['output_h5']), 'w')
   L = encode_captions(sentences, wtoi, params)
   f.create_dataset("labels", dtype='int32', data=L)
   f.close()
@@ -294,11 +288,11 @@ if __name__ == '__main__':
   parser.add_argument('--output_json', default='data.json', help='output json file')
   parser.add_argument('--output_h5', default='data.h5', help='output h5 file')
   parser.add_argument('--data_root', default='data', type=str, help='data folder containing images and four datasets.')
-  parser.add_argument('--dataset', default='refcoco', type=str, help='refcoco/refcoco+/refcocog')
-  parser.add_argument('--splitBy', default='unc', type=str, help='unc/google')
+  parser.add_argument('--dataset', default='rsvg', type=str, help='refcoco/refcoco+/refcocog')
+  #parser.add_argument('--splitBy', default='unc', type=str, help='unc/google')
   parser.add_argument('--max_length', type=int, help='max length of a caption')  # refcoco 10, refclef 10, refcocog 20
   parser.add_argument('--images_root', default='', help='root location in which images are stored')
-  parser.add_argument('--word_count_threshold', default=5, type=int, help='only words that occur more than this number of times will be put in vocab')
+  parser.add_argument('--word_count_threshold', default=1, type=int, help='only words that occur more than this number of times will be put in vocab')
   parser.add_argument('--topK', default=50, type=int, help='top K attribute words')
 
   # argparse

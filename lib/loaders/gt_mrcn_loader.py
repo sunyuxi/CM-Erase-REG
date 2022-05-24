@@ -22,13 +22,11 @@ import numpy as np
 import h5py
 import json
 import random
+import functools
 from loaders.loader import Loader
 
 import torch
 from torch.autograd import Variable
-
-# mrcn path
-from mrcn import inference_no_imdb
 
 import pdb
 
@@ -67,17 +65,40 @@ class GtMRCNLoader(Loader):
     for k, v in self.split_ix.items():
       print('assigned %d images to split %s' % (len(v), k))
 
-  def prepare_mrcn(self, head_feats_dir, args):
+  def prepare_mrcn(self, head_feats_dir, suffix, args, img_feats_dir=None, imgfeats_suffix=None):
     """
     Arguments:
       head_feats_dir: cache/feats/dataset_splitBy/net_imdb_tag, containing all image conv_net feats
       args: imdb_name, net_name, iters, tag
     """
     self.head_feats_dir = head_feats_dir
-    self.mrcn = inference_no_imdb.Inference(args)
-    assert args.net_name == 'res101'
-    self.pool5_dim = 1024
-    self.fc7_dim = 2048
+    self.dict_annid2feats = {}
+    anns_key_list = self.Anns.keys()
+    for ann_id in anns_key_list:
+      filepath=osp.join(head_feats_dir, str(ann_id)+"_"+suffix)
+      with h5py.File(filepath, 'r') as f:
+        self.dict_annid2feats[ann_id] = f['roi_feats'][0]
+    assert args.net_name == 'res50'
+    self.pool5_dim = 256
+    self.fc7_dim = 256
+
+    self.dict_imgid2feats = {}
+    if img_feats_dir != None:
+      #load img features
+      for imgid in self.Images:
+        filepath=osp.join(img_feats_dir, str(imgid)+"_"+imgfeats_suffix)
+        with h5py.File(filepath, 'r') as f:
+          self.dict_imgid2feats[imgid] = f['roi_feats'][0]
+
+  def load_img_to_spatial_fc7(self, input_imgid):
+    imgid_list = [input_imgid]
+    assert len(self.dict_imgid2feats)>0
+    data_list=list()
+    for imgid in imgid_list:
+      data_list.append(self.dict_imgid2feats[imgid])
+    pool5_fc7 = np.stack(data_list, axis=0)
+
+    return torch.from_numpy(pool5_fc7).float().cuda(), torch.from_numpy(pool5_fc7).float().cuda()
 
   # load different kinds of feats
   def loadFeats(self, Feats):
@@ -143,10 +164,6 @@ class GtMRCNLoader(Loader):
     for image_id in batch_image_ids:
       ref_ids = self.Images[image_id]['ref_ids']
       batch_ref_ids += self.expand_list(ref_ids, seq_per_ref)
-      
-      # fetch head and im_info
-      head, im_info = self.image_to_head(image_id)
-      head = Variable(torch.from_numpy(head).cuda())
 
       # get image related ids 
       image_pos_ann_ids, image_neg_ann_ids = [], []
@@ -168,18 +185,16 @@ class GtMRCNLoader(Loader):
         batch_neg_sent_ids += neg_sent_ids
 
         # fetch feats of whole img
-        head_pool5, _ = self.mrcn.img_to_spatial_fc7(head) 
+        head_pool5, _ = self.load_img_to_spatial_fc7(image_id) 
         for cnt in range(seq_per_ref):
           batch_head_pool5 += [head_pool5]
 
-      pos_ann_boxes = xywh_to_xyxy(np.vstack([self.Anns[ann_id]['box'] for ann_id in image_pos_ann_ids])) 
-      image_pos_pool5, image_pos_fc7 = self.fetch_grid_feats(pos_ann_boxes, head, im_info)  # (num_pos, k, 7, 7)
+      image_pos_pool5, image_pos_fc7 = self.fetch_grid_feats(image_pos_ann_ids)  # (num_pos, k, 7, 7)
 
       batch_pos_pool5 += [image_pos_pool5]
       batch_pos_fc7   += [image_pos_fc7]
 
-      neg_ann_boxes = xywh_to_xyxy(np.vstack([self.Anns[ann_id]['box'] for ann_id in image_neg_ann_ids]))
-      image_neg_pool5, image_neg_fc7 = self.fetch_grid_feats(neg_ann_boxes, head, im_info)  # (num_neg, k, 7, 7)
+      image_neg_pool5, image_neg_fc7 = self.fetch_grid_feats(image_neg_ann_ids)  # (num_neg, k, 7, 7)
       batch_neg_pool5 += [image_neg_pool5]
       batch_neg_fc7   += [image_neg_fc7]
 
@@ -220,8 +235,8 @@ class GtMRCNLoader(Loader):
     neg_labels = Variable(torch.from_numpy(neg_labels).long().cuda())
 
     # chunk pos_labels and neg_labels using max_len
-    max_len = max((pos_labels != 0).sum(1).max().data[0], 
-                  (neg_labels != 0).sum(1).max().data[0])
+    max_len = max((pos_labels != 0).sum(1).max(), 
+                  (neg_labels != 0).sum(1).max())
     pos_labels = pos_labels[:, :max_len]
     neg_labels = neg_labels[:, :max_len]
 
@@ -261,7 +276,7 @@ class GtMRCNLoader(Loader):
       elif len(dt_ann_ids) > 0:
         neg_ann_id = random.choice(dt_ann_ids)
       else:
-        neg_ann_id = random.choice(self.Anns.keys())
+        neg_ann_id = random.choice(list(self.Anns.keys()))
       neg_ann_ids += [neg_ann_id]
       # neg_ref_id for negative language representations: mainly from same-type "referred" objects
       if len(st_ref_ids) > 0 and np.random.uniform(0, 1, 1) < sample_ratio:
@@ -269,7 +284,7 @@ class GtMRCNLoader(Loader):
       elif len(dt_ref_ids) > 0:
         neg_ref_id = random.choice(dt_ref_ids)
       else:
-        neg_ref_id = random.choice(self.Refs.keys())
+        neg_ref_id = random.choice(list(self.Refs.keys()))
       neg_sent_id = random.choice(self.Refs[neg_ref_id]['sent_ids'])
       neg_sent_ids += [neg_sent_id]
 
@@ -300,7 +315,7 @@ class GtMRCNLoader(Loader):
     image = self.Images[ref_ann['image_id']]        
         
     ann_ids = list(image['ann_ids'])  # copy in case the raw list is changed
-    ann_ids = sorted(ann_ids, cmp=compare)
+    ann_ids = sorted(ann_ids, key=functools.cmp_to_key(compare))
 
     st_ref_ids, st_ann_ids, dt_ref_ids, dt_ann_ids = [], [], [], []
     for ann_id in ann_ids:
@@ -347,13 +362,17 @@ class GtMRCNLoader(Loader):
     return np.array(head), np.array(im_info)
 
 
-  def fetch_grid_feats(self, boxes, net_conv, im_info):
+  def fetch_grid_feats(self, bbox_ids):
     """returns 
-    - pool5 (n, 1024, 7, 7)
-    - fc7   (n, 2048, 7, 7) 
+    - pool5 (n, 256, 7, 7)
+    - fc7   (n, 256, 7, 7) 
     """
-    pool5, fc7 = self.mrcn.box_to_spatial_fc7(net_conv, im_info, boxes)
-    return pool5, fc7
+    data_list=list()
+    for bbox_id in bbox_ids:
+      data_list.append(self.dict_annid2feats[bbox_id])
+    pool5_fc7 = np.stack(data_list, axis=0)
+
+    return torch.from_numpy(pool5_fc7).float().cuda(), torch.from_numpy(pool5_fc7).float().cuda()
 
   def compute_lfeats(self, ann_ids):
     # return ndarray float32 (#ann_ids, 5)
@@ -509,15 +528,10 @@ class GtMRCNLoader(Loader):
     image_id = split_ix[ri]
     image = self.Images[image_id]
 
-    # fetch head and im_info
-    head, im_info = self.image_to_head(image_id)
-    head = Variable(torch.from_numpy(head).cuda()) 
-
     # fetch ann_ids owning attributes
     ref_ids = image['ref_ids']
     ann_ids = [self.Refs[ref_id]['ann_id'] for ref_id in ref_ids]
-    ann_boxes  = xywh_to_xyxy(np.vstack([self.Anns[ann_id]['box'] for ann_id in ann_ids])) 
-    pool5, fc7 = self.fetch_grid_feats(ann_boxes, head, im_info)  # (#ann_ids, k, 7, 7)
+    pool5, fc7 = self.fetch_grid_feats(ann_ids)  # (#ann_ids, k, 7, 7)
     lfeats     = self.compute_lfeats(ann_ids)
     dif_lfeats = self.compute_dif_lfeats(ann_ids)
 
@@ -549,18 +563,13 @@ class GtMRCNLoader(Loader):
     image_id = split_ix[ri]
     image = self.Images[image_id]
 
-    # fetch head and im_info
-    head, im_info = self.image_to_head(image_id)
-    head = Variable(torch.from_numpy(head).cuda())
-
     # fetch feats
     ann_ids = image['ann_ids']
-    ann_boxes  = xywh_to_xyxy(np.vstack([self.Anns[ann_id]['box'] for ann_id in ann_ids])) 
-    pool5, fc7 = self.fetch_grid_feats(ann_boxes, head, im_info) # (#ann_ids, k, 7, 7)
+    pool5, fc7 = self.fetch_grid_feats(ann_ids) # (#ann_ids, k, 7, 7)
     lfeats     = self.compute_lfeats(ann_ids)
     dif_lfeats = self.compute_dif_lfeats(ann_ids)
     cxt_fc7, cxt_lfeats, cxt_ann_ids = self.fetch_cxt_feats(ann_ids, opt)
-    head_pool5, _ = self.mrcn.img_to_spatial_fc7(head) # actually here we use pool5 features. I was too lazy to revise the name. #_# ...
+    head_pool5, _ = self.load_img_to_spatial_fc7(image_id) # actually here we use pool5 features. I was too lazy to revise the name. #_# ...
     batch_head_pool5 = []
     for cnt in range(len(ann_ids)):
       batch_head_pool5 += [head_pool5]
@@ -600,13 +609,10 @@ class GtMRCNLoader(Loader):
   def getImageBatch(self, image_id, sent_ids=None, opt={}):
     # fetch head and im_info
     image = self.Images[image_id]
-    head, im_info = self.image_to_head(image_id)
-    head = Variable(torch.from_numpy(head).cuda())
-
+    
     # fetch feats
     ann_ids = image['ann_ids']
-    ann_boxes  = xywh_to_xyxy(np.vstack([self.Anns[ann_id]['box'] for ann_id in ann_ids])) 
-    pool5, fc7 = self.fetch_grid_feats(ann_boxes, head, im_info) # (#ann_ids, k, 7, 7)
+    pool5, fc7 = self.fetch_grid_feats(ann_ids) # (#ann_ids, k, 7, 7)
     lfeats     = self.compute_lfeats(ann_ids)
     dif_lfeats = self.compute_dif_lfeats(ann_ids)
     cxt_fc7, cxt_lfeats, cxt_ann_ids = self.fetch_cxt_feats(ann_ids, opt)

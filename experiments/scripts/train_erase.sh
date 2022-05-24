@@ -1,20 +1,16 @@
-GPU_ID=$1
+GPU_ID=0 #$1
 
-IMDB="coco_minus_refer"
-ITERS=1250000
-TAG="notime"
-NET="res101"
-DATASET="refcoco+"
-SPLITBY="unc"
-ID=coco+_erase
+IMDB="dota_v1_0"
+TAG="RoITransformer"
+NET="res50"
+DATASET="rsvg"
+ID=rsvg_erase
 
 CUDA_VISIBLE_DEVICES=${GPU_ID} python -u ./tools/train.py \
     --imdb_name ${IMDB} \
     --net_name ${NET} \
-    --iters ${ITERS} \
     --tag ${TAG} \
     --dataset ${DATASET} \
-    --splitBy ${SPLITBY} \
     --id ${ID} \
     --learning_rate 4e-4 \
     --learning_rate_decay_start 6 \
@@ -25,5 +21,4 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python -u ./tools/train.py \
     --erase_allvisual_weight 1 \
     --erase_train 1 \
     --batch_size 20 \
-    --start_from coco+_pretrain \
-    2>&1 | tee logs/${ID}
+    --start_from dota_pretrain_roitrans

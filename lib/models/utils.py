@@ -10,6 +10,8 @@ from torch.autograd import Variable
 def clip_gradient(optimizer, grad_clip):
     for group in optimizer.param_groups:
         for param in group['params']:
+            if param.shape[0] == 0:
+                continue
             param.grad.data.clamp_(-grad_clip, grad_clip)
 
 def set_lr(optimizer, lr):

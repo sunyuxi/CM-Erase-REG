@@ -5,14 +5,14 @@ def parse_opt():
 
     parser = argparse.ArgumentParser()
     # Data input settings
-    parser.add_argument('--dataset', type=str, default='refcoco', help='name of dataset')
-    parser.add_argument('--splitBy', type=str, default='unc', help='who splits this dataset')
+    parser.add_argument('--dataset', type=str, default='rsvg', help='name of dataset')
+    #parser.add_argument('--splitBy', type=str, default='unc', help='who splits this dataset')
     parser.add_argument('--start_from', type=str, default=None, help='continuing training from saved model')
     # FRCN setting
-    parser.add_argument('--imdb_name', default='coco_minus_refer', help='image databased trained on.')
-    parser.add_argument('--net_name', default='res101', help='net_name: res101 or vgg16')
-    parser.add_argument('--iters', default=1250000, type=int, help='iterations we trained for faster R-CNN')
-    parser.add_argument('--tag', default='notime', help='on default tf, don\'t change this!')
+    parser.add_argument('--imdb_name', default='dota_v1_0', help='image databased trained on.')
+    parser.add_argument('--net_name', default='res50', help='net_name: res101 or vgg16')
+    #parser.add_argument('--iters', default=1250000, type=int, help='iterations we trained for faster R-CNN')
+    parser.add_argument('--tag', default='RoITransformer', help='on default tf, don\'t change this!')
     # Visual Encoder Setting
     parser.add_argument('--visual_sample_ratio', type=float, default=0.3, help='ratio of same-type objects over different-type objects')
     parser.add_argument('--visual_fuse_mode', type=str, default='concat', help='concat or mul')
@@ -70,8 +70,9 @@ def parse_opt():
     parser.add_argument('--seed', type=int, default=24, help='random number generator seed to use')
     parser.add_argument('--gpuid', type=int, default=0, help='which gpu to use, -1 = use CPU')
     # testing
-    parser.add_argument('--split', type=str, default='testA', help='split: testAB or val, etc')
+    parser.add_argument('--split', type=str, default='test', help='split: test or val, etc')
     parser.add_argument('--verbose', type=int, default=1, help='if we want to print the testing progress')
+    parser.add_argument('--iou_threshold', type=float, default=0.5, help='iou threshold')
     # Language Erasing
     parser.add_argument('--resume', type=int, default=0, help='resume on previous model or not')
     parser.add_argument('--erase_train', type=int, default=0, help='whether to erase or not in training')

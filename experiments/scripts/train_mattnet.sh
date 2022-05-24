@@ -1,23 +1,18 @@
-GPU_ID1=$1
+GPU_ID=0 #$1
+DATASET='rsvg' #$2
 
-IMDB="coco_minus_refer"
-ITERS=1250000
-TAG="notime"
-NET="res101"
-DATASET="refcoco+"
-SPLITBY="unc"
-ID=coco+_pretrain
+IMDB="dota_v1_0"
+TAG="RoITransformer"
+NET="res50"
+ID="dota_pretrain_roitrans"
 
-CUDA_VISIBLE_DEVICES=${GPU_ID1} python -u ./tools/train.py \
+CUDA_VISIBLE_DEVICES=${GPU_ID} python -u ./tools/train.py \
     --imdb_name ${IMDB} \
     --net_name ${NET} \
-    --iters ${ITERS} \
     --tag ${TAG} \
     --dataset ${DATASET} \
-    --splitBy ${SPLITBY} \
     --id ${ID} \
     --max_epochs 15 \
     --learning_rate 4e-4 \
     --erase_train 0 \
-    --batch_size 28 \
-    2>&1 | tee logs/${ID}
+    --batch_size 28

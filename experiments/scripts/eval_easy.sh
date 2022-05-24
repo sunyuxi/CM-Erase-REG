@@ -1,42 +1,15 @@
-GPU_ID=$1
+GPU_ID=1 #$1
+DATASET='rsvg' #$2
+SPLIT='test' #$3
 
-DATASET=refcocog
-SPLITBY=umd
-ERASE_TEST=1
-ID="coco+_erase"
+ID="rsvg_erase"
+CUDA_VISIBLE_DEVICES=${GPU_ID} python ./tools/eval_easy.py \
+                --dataset ${DATASET} \
+                --split ${SPLIT} \
+                --id ${ID}
 
-case ${DATASET} in
-    refcoco)
-        for SPLIT in testA testB
-        do
-            CUDA_VISIBLE_DEVICES=${GPU_ID} python -u ./tools/eval_easy.py \
+SPLIT='val' #$3
+CUDA_VISIBLE_DEVICES=${GPU_ID} python ./tools/eval_easy.py \
                 --dataset ${DATASET} \
-                --splitBy ${SPLITBY} \
                 --split ${SPLIT} \
-                --id ${ID} \
-		2>&1 | tee logs/test_${ID}_${SPLIT}
-        done
-    ;;
-    refcoco+)
-        for SPLIT in testA testB
-        do
-            CUDA_VISIBLE_DEVICES=${GPU_ID} python -u ./tools/eval_easy.py \
-                --dataset ${DATASET} \
-                --splitBy ${SPLITBY} \
-                --split ${SPLIT} \
-                --id ${ID} \
-		2>&1 | tee logs/test_${ID}_${SPLIT}
-        done
-    ;;
-    refcocog)
-        for SPLIT in val test
-        do
-            CUDA_VISIBLE_DEVICES=${GPU_ID} python -u ./tools/eval_easy.py \
-                --dataset ${DATASET} \
-                --splitBy ${SPLITBY} \
-                --split ${SPLIT} \
-                --id ${ID} \
-		2>&1 | tee logs/test_${ID}_${SPLIT}
-        done
-    ;;
-esac
+                --id ${ID}

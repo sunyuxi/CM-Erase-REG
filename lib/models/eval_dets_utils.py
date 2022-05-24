@@ -31,7 +31,7 @@ def computeIoU(box1, box2):
   return float(inter)/union
 
 
-def eval_split(loader, model, crit, split, opt):
+def eval_split(loader, model, crit, split, opt, iou_threshold):
   verbose = opt.get('verbose', True)
   num_sents = opt.get('num_sents', -1)
   assert split != 'train', 'Check the evaluation split. (comment this line if you are evaluating [train])'
@@ -58,7 +58,7 @@ def eval_split(loader, model, crit, split, opt):
 
       # expand labels
       label = labels[i:i+1]      # (1, label.size(1))
-      max_len = (label != 0).sum().data[0]
+      max_len = (label != 0).sum()
       label = label[:, :max_len] # (1, max_len) 
       expanded_labels = label.expand(len(det_ids), max_len) # (n, max_len)
 
@@ -74,7 +74,7 @@ def eval_split(loader, model, crit, split, opt):
       scores, sub_grid_attn, sub_attn, loc_attn, rel_attn, rel_ixs, weights, att_scores, att_loss = \
         model(Feats['pool5'], Feats['fc7'], Feats['lfeats'], Feats['dif_lfeats'], 
               Feats['cxt_fc7'], Feats['cxt_lfeats'],
-              expanded_labels, img_fc7=Feats['img_fc7']) 
+              expanded_labels, img_pool5=Feats['img_fc7']) 
       scores = scores.data.cpu().numpy()
       att_scores = F.sigmoid(att_scores) # (n, num_atts)
       rel_ixs = rel_ixs.data.cpu().numpy().tolist() # (n, )
@@ -84,7 +84,7 @@ def eval_split(loader, model, crit, split, opt):
       pred_det_id = det_ids[pred_ix]
       pred_box = loader.Dets[pred_det_id]['box']
       gd_box = data['gd_boxes'][i]
-      if computeIoU(pred_box, gd_box) >= 0.5:
+      if computeIoU(pred_box, gd_box) >= iou_threshold:
         acc += 1
       loss_evals += 1
 

@@ -24,13 +24,11 @@ import numpy as np
 import h5py
 import json
 import random
+import functools
 from loaders.loader import Loader
 
 import torch
 from torch.autograd import Variable
-
-# mrcn path
-from mrcn import inference_no_imdb
 
 
 # box functions
@@ -79,20 +77,40 @@ class DetsLoader(Loader):
     for k, v in self.split_ix.items():
       print('assigned %d images to split %s' % (len(v), k))
 
-  def prepare_mrcn(self, head_feats_dir, args):
+  def prepare_mrcn(self, head_feats_dir, suffix, args, img_feats_dir=None, imgfeats_suffix=None):
     """
     Arguments:
       head_feats_dir: cache/feats/dataset_splitBy/net_imdb_tag, containing all image conv_net feats
       args: imdb_name, net_name, iters, tag
     """
     self.head_feats_dir = head_feats_dir
-    self.mrcn = inference_no_imdb.Inference(args)
-    if args.net_name == 'res101':
-      self.pool5_dim = 1024
-      self.fc7_dim = 2048
-    elif args.net_name == 'vgg16':
-      self.pool5_dim = 512
-      self.fc7_dim = 4096
+    self.dict_detid2feats = {}
+    dets_key_list = self.Dets.keys()
+    for det_id in dets_key_list:
+      filepath=osp.join(head_feats_dir, str(det_id)+"_"+suffix)
+      with h5py.File(filepath, 'r') as f:
+        self.dict_detid2feats[det_id] = f['roi_feats'][0]
+    assert args.net_name == 'res50'
+    self.pool5_dim = 256
+    self.fc7_dim = 256
+
+    self.dict_imgid2feats = {}
+    if img_feats_dir != None:
+      #load img features
+      for imgid in self.Images:
+        filepath=osp.join(img_feats_dir, str(imgid)+"_"+imgfeats_suffix)
+        with h5py.File(filepath, 'r') as f:
+          self.dict_imgid2feats[imgid] = f['roi_feats'][0]
+
+  def load_img_to_spatial_fc7(self, input_imgid):
+    imgid_list = [input_imgid]
+    assert len(self.dict_imgid2feats)>0
+    data_list=list()
+    for imgid in imgid_list:
+      data_list.append(self.dict_imgid2feats[imgid])
+    pool5_fc7 = np.stack(data_list, axis=0)
+
+    return torch.from_numpy(pool5_fc7).float().cuda(), torch.from_numpy(pool5_fc7).float().cuda()
 
   # load different kinds of feats
   def loadFeats(self, Feats):
@@ -118,15 +136,6 @@ class DetsLoader(Loader):
       out += [l] * n
     return out
 
-  def image_to_head(self, image_id):
-    """Returns
-    head: float32 (1, 1024, H, W)
-    im_info: float32 [[im_h, im_w, im_scale]]
-    """
-    feats_h5 = osp.join(self.head_feats_dir, str(image_id)+'.h5')
-    feats = h5py.File(feats_h5, 'r')
-    head, im_info = feats['head'], feats['im_info']
-
   def fetch_neighbour_ids(self, ref_det_id):
     """
     For a given ref_det_id, we return
@@ -151,7 +160,7 @@ class DetsLoader(Loader):
     image = self.Images[ref_det['image_id']]
 
     det_ids = list(image['det_ids'])  # copy in case the raw list is changed
-    det_ids = sorted(det_ids, cmp=compare)
+    det_ids = sorted(det_ids, key=functools.cmp_to_key(compare))
 
     st_det_ids, dt_det_ids = [], []
     for det_id in det_ids:
@@ -163,23 +172,17 @@ class DetsLoader(Loader):
 
     return st_det_ids, dt_det_ids    
 
-  def image_to_head(self, image_id):
-    """Returns
-    head: float32 (1, 1024, H, W)
-    im_info: float32 [[im_h, im_w, im_scale]]
-    """
-    feats_h5 = osp.join(self.head_feats_dir, str(image_id)+'.h5')
-    feats = h5py.File(feats_h5, 'r')
-    head, im_info = feats['head'], feats['im_info']
-    return np.array(head), np.array(im_info)
-
-  def fetch_grid_feats(self, boxes, net_conv, im_info):
+  def fetch_grid_feats(self, bbox_ids):
     """returns 
-    - pool5 (n, 1024, 7, 7)
-    - fc7   (n, 2048, 7, 7) 
+    - pool5 (n, 256, 7, 7)
+    - fc7   (n, 256, 7, 7) 
     """
-    pool5, fc7 = self.mrcn.box_to_spatial_fc7(net_conv, im_info, boxes)
-    return pool5, fc7
+    data_list=list()
+    for bbox_id in bbox_ids:
+      data_list.append(self.dict_detid2feats[bbox_id])
+    pool5_fc7 = np.stack(data_list, axis=0)
+
+    return torch.from_numpy(pool5_fc7).float().cuda(), torch.from_numpy(pool5_fc7).float().cuda()
 
   def compute_lfeats(self, det_ids):
     # return ndarray float32 (#det_ids, 5)
@@ -259,20 +262,15 @@ class DetsLoader(Loader):
     image_id = split_ix[ri]
     image = self.Images[image_id]
 
-    # fetch head and im_info
-    head, im_info = self.image_to_head(image_id)
-    head = Variable(torch.from_numpy(head).cuda())
-
     # fetch feats
     det_ids = image['det_ids']
-    det_boxes  = xywh_to_xyxy(np.vstack([self.Dets[det_id]['box'] for det_id in det_ids])) 
-    pool5, fc7 = self.fetch_grid_feats(det_boxes, head, im_info) # (#det_ids, k, 7, 7)
+    pool5, fc7 = self.fetch_grid_feats(det_ids) # (#det_ids, k, 7, 7)
     lfeats     = self.compute_lfeats(det_ids)
     dif_lfeats = self.compute_dif_lfeats(det_ids)
     cxt_fc7, cxt_lfeats, cxt_det_ids = self.fetch_cxt_feats(det_ids, opt)
 
     # img_fc7
-    head_fc7, _ = self.mrcn.img_to_spatial_fc7(head)
+    head_fc7, _ = self.load_img_to_spatial_fc7(image_id)
     batch_head_fc7 = []
     for cnt in range(len(det_ids)):
       batch_head_fc7 += [head_fc7]
@@ -311,13 +309,10 @@ class DetsLoader(Loader):
   def getImageBatch(self, image_id, sent_ids=None, opt={}):
     # fetch head and im_info
     image = self.Images[image_id]
-    head, im_info = self.image_to_head(image_id)
-    head = Variable(torch.from_numpy(head).cuda())
-
+    
     # fetch feats
     det_ids = image['det_ids']
-    det_boxes  = xywh_to_xyxy(np.vstack([self.Dets[det_id]['box'] for det_id in det_ids])) 
-    pool5, fc7 = self.fetch_grid_feats(det_boxes, head, im_info) # (#det_ids, k, 7, 7)
+    pool5, fc7 = self.fetch_grid_feats(det_ids) # (#det_ids, k, 7, 7)
     lfeats     = self.compute_lfeats(det_ids)
     dif_lfeats = self.compute_dif_lfeats(det_ids)
     cxt_fc7, cxt_lfeats, cxt_det_ids = self.fetch_cxt_feats(det_ids, opt)

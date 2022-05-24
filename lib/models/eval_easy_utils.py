@@ -116,7 +116,7 @@ def eval_split(loader, model, crit, split, opt):
 
       # expand labels
       label = labels[i:i+1]      # (1, label.size(1))
-      max_len = (label != 0).sum().data[0]
+      max_len = (label != 0).sum()
       label = label[:, :max_len] # (1, max_len) 
       expanded_labels = label.expand(len(ann_ids), max_len) # (n, max_len)
       
@@ -181,7 +181,7 @@ def eval_split(loader, model, crit, split, opt):
       entry['weights'] = weights[pred_ix].data.cpu().numpy().tolist()   # list of 2 weights
       entry['pred_atts'] = pred_atts # list of (att_wd, score)
       if opt['erase_test']:
-	entry['sub_grid_attn_erase'] = sub_grid_attn_erase[pred_ix].data.cpu().numpy().tolist() # list of 49 attn
+        entry['sub_grid_attn_erase'] = sub_grid_attn_erase[pred_ix].data.cpu().numpy().tolist() # list of 49 attn
         entry['sub_attn_erase'] = sub_attn_erase[pred_ix].data.cpu().numpy().tolist() # list of seq_len attn
         entry['loc_attn_erase'] = loc_attn_erase[pred_ix].data.cpu().numpy().tolist() # list of seq_len attn
         entry['rel_attn_erase'] = rel_attn_erase[pred_ix].data.cpu().numpy().tolist() # list of seq_len attn
