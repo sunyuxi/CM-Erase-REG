@@ -1,0 +1,4 @@
+[rsvg][test], iou=0.50 id[rsvg_erase]'s acc is 26.73%
+[rsvg][test], iou=0.25 id[rsvg_erase]'s acc is 34.80%
+[rsvg][val], iou=0.50 id[rsvg_erase]'s acc is 24.06%
+[rsvg][val], iou=0.25 id[rsvg_erase]'s acc is 31.97%

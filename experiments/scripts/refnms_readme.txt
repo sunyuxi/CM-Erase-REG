@@ -1,0 +1,2 @@
+只需要执行该文件
+sh experiments/scripts/eval_dets_refnms.sh

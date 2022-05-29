@@ -91,6 +91,14 @@ def parse_opt():
     parser.add_argument('--shuffle', type=int, default=1, help='shuffle in training')
     parser.add_argument('--eval_mode', type=int, default=0, help='evaluation mode fix bn and dropout')
     
+    #RefNMS paramaters
+    parser.add_argument('--refnmsdet_dirpath', type=str, default='hbb_obb_features_refnms_det_selected256')
+    parser.add_argument('--refnmsdet_feats_suffix', type=str, default='hbb_det_res50_dota_v1_0_RoITransformer.hdf5')
+    parser.add_argument('--wholeimg_feats_dirpath', type=str, default='hbb_obb_features_wholeimg')
+    parser.add_argument('--wholeimg_feats_suffix', type=str, default='hbb_img_res50_dota_v1_0_RoITransformer.hdf5')
+    parser.add_argument('--refnmsdet_jsonpath', type=str, default='../ref-nms/output/matt_dets_att_vanilla_refnms256_rsvg_0.json')
+    parser.add_argument('--refnmsdet_meanpools_feats_path', type=str, default='../MAttNet/cache/feats/rsvg/refnms256_res50_dota_v1_0_RoITransformer_det_feats.h5')
+
     # parse 
     args = parser.parse_args()
     opt = vars(args)
